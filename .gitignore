@@ -1,0 +1,5 @@
+/.idea
+.venv
+/data/test
+/data/train
+/data/valid
