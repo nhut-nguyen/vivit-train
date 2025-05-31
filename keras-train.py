@@ -6,7 +6,6 @@ import cv2
 from keras import layers, ops
 import io
 import imageio
-import  ipywidgets
 
 # Setting seed for reproducibility
 SEED = 42
@@ -17,14 +16,14 @@ keras.utils.set_random_seed(SEED)
 BATCH_SIZE = 32
 AUTO = tf.data.AUTOTUNE
 INPUT_SHAPE = (32, 56, 56, 3) #frame, height, width, color chanel
-NUM_CLASSES = 43
+NUM_CLASSES = 11
 
 # OPTIMIZER
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-5
 
 # TRAINING
-EPOCHS = 45
+EPOCHS = 60
 
 # TUBELET EMBEDDING
 PATCH_SIZE = (8, 8, 8)
@@ -49,6 +48,30 @@ def preprocess(frames: tf.Tensor, label: tf.Tensor):
     label = tf.cast(label, tf.float32)
     return frames, label
 
+def convert_label(group):
+    mapping = {
+        1: 1,
+        2: 2, 3: 2,
+        4: 3, 5: 3, 14: 3, 23: 3, 25: 3, 40: 3,
+        6: 4, 9: 4, 22: 4,
+        11: 5,
+        12: 6, 24: 6, 27: 6, 30: 6, 34: 6,
+        16: 7, 17: 7, 21: 7, 31: 7,
+        33: 8,
+        36: 9,
+        41: 10
+    }
+    return mapping.get(group, 0)  # 0 nếu không tìm thấy
+
+def get_label_from_filename(filename):
+    # Bỏ phần mở rộng .mp4
+    base_name = os.path.splitext(filename)[0]
+
+    # Tách chuỗi dựa trên dấu gạch dưới (_) và lấy phần đầu (nhãn)
+    label = convert_label(int(base_name.split('_')[0]))
+
+    return int(label)  # Trả về nhãn dạng số nguyên
+
 
 def prepare_dataloader(
     videos: np.ndarray,
@@ -69,16 +92,6 @@ def prepare_dataloader(
     )
     print("Prepare DataLoader")
     return dataloader
-
-
-def get_label_from_filename(filename):
-    # Bỏ phần mở rộng .mp4
-    base_name = os.path.splitext(filename)[0]
-
-    # Tách chuỗi dựa trên dấu gạch dưới (_) và lấy phần đầu (nhãn)
-    label = base_name.split('_')[0]
-
-    return int(label)  # Trả về nhãn dạng số nguyên
 
 # Hàm đọc và xử lý video
 def load_video(video_path, num_frames, target_size):
@@ -132,15 +145,6 @@ def data_to_tensor(video_dir):
     return (video_tensor, label_tensor)
 
 
-(train_videos, train_labels) = data_to_tensor('D:/Projects/autism/vivit_model_python/data/train/')
-(valid_videos, valid_labels) = data_to_tensor('D:/Projects/autism/vivit_model_python/data/valid/')
-(test_videos, test_labels) = data_to_tensor('D:/Projects/autism/vivit_model_python/data/test/')
-
-trainloader = prepare_dataloader(train_videos, train_labels, "train")
-validloader = prepare_dataloader(valid_videos, valid_labels, "valid")
-testloader = prepare_dataloader(test_videos, test_labels, "test")
-
-
 class TubeletEmbedding(layers.Layer):
     def __init__(self, embed_dim, patch_size, **kwargs):
         super().__init__(**kwargs)
@@ -177,7 +181,7 @@ class PositionalEncoder(layers.Layer):
         return encoded_tokens
 
 #Using Model 1: Spatio-temporal attention
-def create_vivit_classifier(
+def VivitSpatioTemporalAttentionModel(
     tubelet_embedder,
     positional_encoder,
     input_shape=INPUT_SHAPE,
@@ -224,15 +228,15 @@ def create_vivit_classifier(
     # Classify outputs.
     outputs = layers.Dense(units=num_classes, activation="softmax")(representation)
 
-    print("Create Model ViViT")
+    print("Create Model ViViT Spatio-Temporal Attention")
 
     # Create the Keras model.
     model = keras.Model(inputs=inputs, outputs=outputs)
     return model
 
-def run_experiment():
+def RunExperiment():
     # Initialize model
-    model = create_vivit_classifier(
+    model = VivitSpatioTemporalAttentionModel(
         tubelet_embedder=TubeletEmbedding(
             embed_dim=PROJECTION_DIM, patch_size=PATCH_SIZE
         ),
@@ -260,20 +264,26 @@ def run_experiment():
 
     return model
 
+(train_videos, train_labels) = data_to_tensor('D:/Projects/autism/vivit_model_python/data/train/')
+(valid_videos, valid_labels) = data_to_tensor('D:/Projects/autism/vivit_model_python/data/valid/')
+(test_videos, test_labels) = data_to_tensor('D:/Projects/autism/vivit_model_python/data/test/')
 
-model = run_experiment()
-model.save('vivit_model_20250520.keras')
+trainloader = prepare_dataloader(train_videos, train_labels, "train")
+validloader = prepare_dataloader(valid_videos, valid_labels, "valid")
+testloader = prepare_dataloader(test_videos, test_labels, "test")
+
+model = RunExperiment()
+model.save('vivit_model.keras')
 
 #Inference Model
 
-NUM_SAMPLES_VIZ = 25
+NUM_SAMPLES_VIZ = 250
 testsamples, labels = next(iter(testloader))
 testsamples, labels = testsamples[:NUM_SAMPLES_VIZ], labels[:NUM_SAMPLES_VIZ]
 
 ground_truths = []
 preds = []
 videos = []
-
 model.summary()
 
 for i, (testsample, label) in enumerate(zip(testsamples, labels)):
@@ -292,12 +302,9 @@ for i, (testsample, label) in enumerate(zip(testsamples, labels)):
 
 boxes = []
 all_label = [0, 1]
-for i in range(NUM_SAMPLES_VIZ):
-    # true_class = all_label[ground_truths[i]]
-    # pred_class = all_label[preds[i]]
 
+for i in range(NUM_SAMPLES_VIZ):
     true_class_i = ground_truths[i]
     pred_class_i = preds[i]
-
     print(f"T: {true_class_i} | P: {pred_class_i}")
 

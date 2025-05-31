@@ -1,5 +1,5 @@
 /.idea
-.venv
+/.venv
 /data/test
 /data/train
 /data/valid
